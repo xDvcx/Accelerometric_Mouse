@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <stdint.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,7 +32,17 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define PRINTF_TIME_DELAY 2000
+#define PRINTF_TIME_DELAY 100
+
+//Defines for MPU-9250 registers
+#define MPU_9250_ADDR 0xD0
+#define MPU_9250_WHO_AM_I 0x75
+#define MPU_9250_ACCEL_XOUT_H 0x3B
+#define MPU_9250_ACCEL_XOUT_L 0x3C
+#define MPU_9250_ACCEL_YOUT_H 0x3D
+#define MPU_9250_ACCEL_YOUT_L 0x3E
+#define MPU_9250_ACCEL_ZOUT_H 0x3F
+#define MPU_9250_ACCEL_ZOUT_L 0x40
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -40,6 +51,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -50,6 +63,7 @@ UART_HandleTypeDef huart2;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -66,6 +80,19 @@ int __io_putchar(int ch)
     HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
     return 1;
 }
+
+uint8_t mpu_9250_read_reg(uint8_t reg)
+{
+	uint8_t value;
+	HAL_I2C_Mem_Read(&hi2c1, MPU_9250_ADDR, reg, 1, &value, sizeof(value), HAL_MAX_DELAY);
+
+	return value;
+}
+
+void mpu_9250_write_reg(uint8_t reg, uint8_t value)
+{
+	HAL_I2C_Mem_Write(&hi2c1, MPU_9250_ADDR, reg, 1, &value, sizeof(value), HAL_MAX_DELAY);
+}
 /* USER CODE END 0 */
 
 /**
@@ -75,7 +102,6 @@ int __io_putchar(int ch)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	int counter = 1;
 
   /* USER CODE END 1 */
 
@@ -98,15 +124,81 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+
+  //Counter setup
+  uint16_t counter = 0;
+
+  //Accelerometer partial values
+  uint8_t Mpu_9250_Accel_Xout_H_Value = 0;
+  uint8_t Mpu_9250_Accel_Xout_L_Value = 0;
+  uint8_t Mpu_9250_Accel_Yout_H_Value = 0;
+  uint8_t Mpu_9250_Accel_Yout_L_Value = 0;
+  uint8_t Mpu_9250_Accel_Zout_H_Value = 0;
+  uint8_t Mpu_9250_Accel_Zout_L_Value = 0;
+
+  //Accelerometer full values
+  int16_t Mpu_9250_Accel_Xout_Value = 0;
+  int16_t Mpu_9250_Accel_Yout_Value = 0;
+  int16_t Mpu_9250_Accel_Zout_Value = 0;
+
+  //Baud rate setup for UART BT401
   HAL_UART_Transmit(&huart2, (uint8_t*)"AT+CT05\r\n", 11, HAL_MAX_DELAY);
+
+  //Startup connection verification
+  uint8_t who_am_i = mpu_9250_read_reg(MPU_9250_WHO_AM_I);
+
+  if (who_am_i != 0) {
+	  printf("Found: MPU-9250\n");
+  }
+  else
+  {
+	  printf("Error: (0x%02X)\n", who_am_i);
+  }
+
+  //Reset accelerometer registers
+  mpu_9250_write_reg(0x77, 0x00);
+  mpu_9250_write_reg(0x78, 0x00);
+  mpu_9250_write_reg(0x7A, 0x00);
+  mpu_9250_write_reg(0x7B, 0x00);
+  mpu_9250_write_reg(0x7D, 0x00);
+  mpu_9250_write_reg(0x7E, 0x00);
+
+  //Accelerometer configuration change
+  uint8_t Configuration_Data_MPU_9250 = mpu_9250_read_reg(0x1C);
+  Configuration_Data_MPU_9250 |= (0 << 3);
+  Configuration_Data_MPU_9250 |= (0 << 4);
+  Configuration_Data_MPU_9250 |= (1 << 5);
+  Configuration_Data_MPU_9250 |= (1 << 6);
+  Configuration_Data_MPU_9250 |= (1 << 7);
+  mpu_9250_write_reg(0x1C, Configuration_Data_MPU_9250);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_UART_Transmit(&huart2, (uint8_t*)"Hello world!\r\n", 16, HAL_MAX_DELAY);
+	  //Accelerometer data reading
+	  Mpu_9250_Accel_Xout_H_Value = mpu_9250_read_reg(MPU_9250_ACCEL_XOUT_H);
+	  Mpu_9250_Accel_Xout_L_Value = mpu_9250_read_reg(MPU_9250_ACCEL_XOUT_L);
+	  Mpu_9250_Accel_Yout_H_Value = mpu_9250_read_reg(MPU_9250_ACCEL_YOUT_H);
+	  Mpu_9250_Accel_Yout_L_Value = mpu_9250_read_reg(MPU_9250_ACCEL_YOUT_L);
+	  Mpu_9250_Accel_Zout_H_Value = mpu_9250_read_reg(MPU_9250_ACCEL_ZOUT_H);
+	  Mpu_9250_Accel_Zout_L_Value = mpu_9250_read_reg(MPU_9250_ACCEL_ZOUT_L);
+
+	  //Accelerometer full values completing
+	  Mpu_9250_Accel_Xout_Value = ((Mpu_9250_Accel_Xout_H_Value << 8)|Mpu_9250_Accel_Xout_L_Value);
+	  Mpu_9250_Accel_Yout_Value = ((Mpu_9250_Accel_Yout_H_Value << 8)|Mpu_9250_Accel_Yout_L_Value);
+	  Mpu_9250_Accel_Zout_Value = ((Mpu_9250_Accel_Zout_H_Value << 8)|Mpu_9250_Accel_Zout_L_Value);
+
+	  //Accelerometer data sending by BT401
+	  printf("%d. MPU-9250 accelerometer reading:\n", counter);
+	  printf("	Mpu_9250_Accel_Xout_Value = %d\n", Mpu_9250_Accel_Xout_Value);
+	  printf("	Mpu_9250_Accel_Yout_Value = %d\n", Mpu_9250_Accel_Yout_Value);
+	  printf("	Mpu_9250_Accel_Zout_Value = %d\n\n", Mpu_9250_Accel_Zout_Value);
+
+	  //Delay and counter update
 	  HAL_Delay(PRINTF_TIME_DELAY);
 	  counter++;
     /* USER CODE END WHILE */
@@ -164,6 +256,54 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x00707CBB;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
